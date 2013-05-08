@@ -123,7 +123,8 @@ focusRight = do
 focusDown = tryMod (_focus%~(0:)) (has (_head._Group))
 focusUp = focus $~ (_2%~initSafe)
 
-keyDown (Char '(') = deleteNode >> insertNode >> insertSym
+keyDown (Char '(') = deleteNode >> insertGroup >> insertSym
+keyDown (Char ')') = focusUp >> focusRight >> insertSym
 keyDown (Char ' ') = focusRight >> insertSym
 keyDown (Char '\r') = focusRight >> insertSym
 keyDown (Char '\b') = delChar
@@ -139,28 +140,28 @@ keyDown _ = return ()
 ctrlKeyDown (SpecialKey KeyLeft) = dragLeft
 ctrlKeyDown (SpecialKey KeyRight) = dragRight
 ctrlKeyDown (SpecialKey KeyUp) = dragUp
-ctrlKeyDown (SpecialKey KeyDown) = cameraDown
-ctrlKeyDown (Char '(') = _head ~~ (Group . return) >> focusDown >> focusRight
+ctrlKeyDown (SpecialKey KeyDown) = dragDown
 ctrlKeyDown (Char 'c') = copyNode
 ctrlKeyDown (Char '\ETX') = copyNode
 ctrlKeyDown (Char 'v') = pasteNode
 ctrlKeyDown (Char '\SYN') = pasteNode 
 ctrlKeyDown (Char 's') = insertSym
 ctrlKeyDown (Char '\DC3') = insertSym
-ctrlKeyDown (Char 'n') = insertNode
-ctrlKeyDown (Char '\SO') = insertNode
+ctrlKeyDown (Char 'g') = insertGroup
+ctrlKeyDown (Char '\a') = insertGroup
 ctrlKeyDown (Char 'q') = quit
 ctrlKeyDown c = print c
 shiftKeyDown (Char 'S') = deleteNode >> insertSym
 shiftKeyDown (Char '\DC3') = deleteNode >> insertSym
-shiftKeyDown (Char 'N') = deleteNode >> insertNode
-shiftKeyDown (Char '\SO') = deleteNode >> insertNode
+shiftKeyDown (Char 'G') = wrapNode
+shiftKeyDown (Char '\a') = wrapNode
 shiftKeyDown c = print c
 
 pasteNode = get clipboard >>= maybe (return ()) (\n -> id ~~ (n:))
 copyNode = get focus >>= getF >>= \l -> clipboard $= listToMaybe l
+wrapNode = _head ~~ (Group . return) >> focusDown >> focusRight
 insertSym = id ~~ (Symbol "":)
-insertNode = id ~~ (Group []:) >> focusDown
+insertGroup = id ~~ (Group []:) >> focusDown
 deleteNode = id ~~ tailSafe
 dragBy foc = get focus >>= getF >>= \f -> case f of
   [] -> return ()
@@ -168,6 +169,7 @@ dragBy foc = get focus >>= getF >>= \f -> case f of
 dragLeft = dragBy focusLeft
 dragRight = dragBy focusRight
 dragUp = dragBy focusUp
+dragDown = dragBy focusDown
 
 axes = renderPrimitive Lines $ sequence_ [c 1 0 0, v 0 0 0, v 1 0 0
                                          ,c 0 1 0, v 0 0 0, v 0 1 0

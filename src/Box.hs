@@ -113,12 +113,14 @@ sBox (Group g@(Symbol "lambda":Group vs:body)) = do
 sBox (Group g@(Symbol "do":_)) = withSubs (syntaxes g) $ \(h:t) cur ->
   glV $ map (align L) (colored grey h:t++[cur])
 sBox (Group g@(Symbol "define":_:_)) = withSubs (syntaxes g) f
-  where f (h:d:t) cur = map (align L) (header:t++[cur]) %|% vPad 30
+  where f (h:d:t) cur = align L header
+                        #|# align L (hPad 30 #- ((map (align L) t %|% vPad 10)
+                                                 #|# cur))
           where header = [colored grey h,d]%-%hPad 30
 sBox (Group g@[Symbol "if",_,_,_]) = do
   oth <- atomic (colored grey <$> textBox "otherwise")
   withSubs (syntaxes g) $ \[o,c,th,el] cur ->
-    centered $ glH $ map (align T) [column [glH [colored grey o,hPad 30,c]
+    centered $ glH $ map (align T) [column [glH [align T (colored grey o),hPad 30,align T c]
                                            ,vPad 10
                                            ,th]
                                    ,hPad 30
