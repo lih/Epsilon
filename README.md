@@ -41,7 +41,7 @@ You may now start editing ! The following commands are available :
   * `C-s`/`C-g`: insert symbol/group before current node
   * `C-S`: replace current node by new symbol
   * `C-G`: wrap current node in a group
-  * `' '`/`<enter>`: insert symbol after current node
+  * `<space>`/`<enter>`: insert symbol after current node
   * `ESC`: save and quit
   * `(`: replace the current node with a group containing an empty symbol
   * `)`: move up, and insert symbol after current node
@@ -51,3 +51,18 @@ You may now start editing ! The following commands are available :
 These may look strange, but they are very natural so that you will have no
 problem getting productive after only a short while. Your code is automatically
 laid out as you type, without you needing to intervene.
+
+Features
+--------
+
+Implemented:
+
+  * Visualization and navigation within the structure
+  * Save/load session (primitive, the file format will change)
+  * Modification of the structure (copy/paste, insert/delete, ...)
+  
+Coming soon:
+
+  * Interactive code evaluation in Epsilon Lisp
+  * Multiple files/buffers
+  * Better text editing within symbols (instead of always appending at the end)
