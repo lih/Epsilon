@@ -48,4 +48,5 @@ pasteNode = get clipboard >>= maybe (return ()) (\n -> id ~~ (n:))
 
 modText f = _head._Symbol ~~ f >> postRedisplay Nothing
 delChar = modText initSafe
+pushChar c = modText (++[c])
 

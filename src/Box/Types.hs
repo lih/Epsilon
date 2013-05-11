@@ -23,6 +23,8 @@ class Drawable d where
   _size :: Lens' d (Vector3 GLfloat)
   _pos :: Lens' d (Vector3 GLfloat)
   _center :: Lens' d (Vector3 GLfloat)
+class Scalable d where
+  scaled :: Vector3 GLfloat -> d -> d
 
 data DrawTree a = DrawTree { _droot :: a, _dsubs :: [(Int,Tree a)] }
 $( makeLenses ''DrawTree )

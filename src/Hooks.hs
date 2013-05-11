@@ -12,8 +12,8 @@ H hs <+< h = hs $~ (h:)
   
 -- |An opaque type describing a reference which may be hooked
 newtype HookVar a = HV (IORef a,Hooks (IO()))
-mkHookVar a = unsafePerformIO $ do
-  ra <- newIORef a
+mkHookVar = unsafePerformIO . mkHookVar'
+mkHookVar' = newIORef >=> \ra -> do
   hs <- H <$> newIORef []
   return $ HV (ra,hs)
 instance HasGetter HookVar where
@@ -21,4 +21,5 @@ instance HasGetter HookVar where
 instance HasSetter HookVar where
   HV (v,hs) $= x = v $= x >> runHooks hs id
 varHooks (HV (_,hs)) = hs
+
 

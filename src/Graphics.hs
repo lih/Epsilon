@@ -1,11 +1,13 @@
 {-# LANGUAGE NoMonomorphismRestriction #-}
-module Graphics (module GL,module GLUT,module FTGL
-                ,v2,v3,v,c,scalev,green,red,grey,vx,vy,vz
+module Graphics (module Graphics.Rendering.OpenGL
+                ,module Graphics.UI.GLUT
+                ,module Graphics.Rendering.FTGL
+                ,v2,v3,v,c,scalev,green,red,grey,brown,vx,vy,vz
                 ,(*-*),(*+*)) where
 
-import Graphics.Rendering.OpenGL as GL hiding (RenderMode,Back,Front)
-import Graphics.UI.GLUT as GLUT hiding (RenderMode,Font,Back,Front)
-import Graphics.Rendering.FTGL as FTGL 
+import Graphics.Rendering.OpenGL hiding (RenderMode,Back,Front)
+import Graphics.UI.GLUT hiding (RenderMode,Font,Back,Front)
+import Graphics.Rendering.FTGL 
 import Control.Lens
 import Control.Applicative
 
@@ -24,5 +26,5 @@ scalev (Vector3 x y z) = scale x y z
 red = Color3 1 0 (0::GLfloat)
 green = Color3 0 1 (0::GLfloat)
 grey = Color3 0.5 0.5 (0.5::GLfloat)
-
+brown = Color3 0.5 0.3 (0.1::GLfloat) 
 
