@@ -4,7 +4,6 @@ import Utils
 import Graphics
 import System.Directory
 
-clipboard = mkRef Nothing
 saveFile = mkRef ""
 
 initSave file = do

@@ -1,5 +1,5 @@
 {-# LANGUAGE NoMonomorphismRestriction, Rank2Types, DeriveFunctor #-}
-module Trees (module Data.Tree, module Data.Tree.Lens, Syntax(..), _Group, _Symbol, TreeIx(..), Treelike(..)
+module Trees (module Data.Tree, module Data.Tree.Lens, Syntax(..), _Group, _Symbol, TreeIx, Treelike(..)
              , _nodeAt, _forestAt,_group
              ,($#),g,s) where
 

@@ -4,16 +4,13 @@ module Box(module Box.Types, move,moveTo,centered,textBox,pad,sBox,draw) where
 import Graphics.Rendering.OpenGL.GL.QueryUtils
 import Data.Maybe
 import Data.List
-import Camera
 import Prelude hiding (sequence,mapM)
 import Graphics hiding (cursor,T,R)
 import Utils hiding (moveTo)
 import Foreign.C.Types
 import Box.Types
-import Selection
 import Trees
 import Font
-import Time
 import Data.List.HIUtils
 
 glue :: (forall a. Lens' (Vector3 a) a) -> [(Sz,Pos)] -> (Sz,Pos,[Pos])
@@ -110,6 +107,13 @@ sBox (Group g@(Symbol "lambda":Group vs:body)) = do
     glH [([colored grey l,vars,dot]++subs) %-% hPad 10,cur]
   where subs = atomic (textBox "\x03bb"):withSubs (syntaxes vs) vars:syntaxes body
         vars vs cur = glH [vs %-% hPad 30,cur]
+sBox (Group g@(Symbol "match":subs)) | all (has (_Group.to length.only 2)) subs = do
+  lam <- colored grey <$> atomic (textBox "\x03bb")
+  arr <- pad (v3 30 0 0) <$> atomic (textBox "\x2192")
+  let matchBox (Group s) = withSubs (syntaxes s) $ \[p,e] cur -> p#-#arr#-#e#-cur
+  withSubs (pure lam:map matchBox subs) $ \(l:bs) cur ->
+    l#-#((map (align L) bs%|%vPad 10)
+         #|# cur)
 sBox (Group g@(Symbol "do":_)) = withSubs (syntaxes g) $ \(h:t) cur ->
   glV $ map (align L) (colored grey h:t++[cur])
 sBox (Group g@(Symbol "define":_:_)) = withSubs (syntaxes g) f

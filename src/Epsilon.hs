@@ -8,17 +8,12 @@ import Trees
 import Camera
 import Selection
 import Input
-import Data.Maybe
 import Font
 import Save
--- import ELisp
+import ELisp hiding (Char)
+import Model
+import Hooks
 
-ia exprs i = 360*fromIntegral i/fromIntegral (length exprs+1) :: GLfloat
-resetAngle = do
-  a <- ia<$>get expr<*>(fst<$>get focus)
-  a' <- get wAngle
-  when (abs (a-a')>=180) $ wAngle $= a'+(360*signum (a-a'))
-  wAGoal $= a
 resetCache = do
   bs <- mapM (fmap centered . sBox) =<< get expr
   cache $= bs
@@ -27,17 +22,14 @@ resetCache = do
 resetSelection = do
   (cur,f) <- get focus
   ch <- get cache
-  let (p,c,s) | length ch==cur = (pure (-5),pure 5,pure 10)
+  let (p,_,s) | length ch==cur = (pure (-5),pure 5,pure 10)
               | otherwise = (pos,t^?!i._center,t^?!i._size)
       t = ch^?!_at cur.to toTree
       lenses = scanl (.) id [branches._at i | i <- f] ; i = last lenses.root
       pos = foldl1 (*+*) [t^?!l.root._pos | l <- lenses]
   selectGoal $= v2 p s
   centerGoal $= p*+*(s<&>(/2))
-triggerVar v tr = makeStateVar (get v) (\x -> v $= x >> tr)
-expr = triggerVar (mkRef ([] :: [Syntax String])) (resetAngle >> resetCache)
 cache = mkRef ([] :: [DrawTree DrawBox])
-focus = triggerVar (mkRef ((0,[]) :: (Int,[Int]))) (resetAngle >> resetSelection)
 wAngle = mkRef (0 :: GLfloat) ; wAGoal = mkRef (0 :: GLfloat)
 
 main :: IO ()
@@ -49,24 +41,32 @@ main = do
   withFont $ do
     initialDisplayMode $= [DoubleBuffered,WithDepthBuffer,WithAlphaComponent]
     createWindow "Epsilon"
+    initELisp
+    varHooks expr <+< (resetAngle >> resetCache)
+    varHooks focus <+< (resetAngle >> resetSelection)
     initSave file >>= \es -> expr $= es
     clearColor $= Color4 0.1 0.1 0.1 1.0
     displayCallback $= display
     reshapeCallback $= Just reshape
-    initCamera ; initSelection ; initInput
+    initInput ; initCamera ; initSelection
     depthFunc $= Just Lequal
     blend $= Enabled
     blendFunc $= (SrcAlpha,OneMinusSrcAlpha)
     smoothTr inter wAngle wAGoal
     keyboardHooks <+< keyboardMouse
-    dragHooks <+< drag
+    mapM_ (uncurry bindEv) bindings
     mainLoop
 
 reshape (Size w h) = do
   let m = max w h
   viewport $= (Position ((w-m)`div`2) ((h-m)`div`2),Size m m)
 
-_focus = iso (\(x,t) -> reverse (x:t)) (\l -> case reverse l of (x:t) -> (x,t) ; _ -> (0,[]))
+ia exprs i = 360*fromIntegral i/fromIntegral (length exprs+1) :: GLfloat
+resetAngle = do
+  a <- ia<$>get expr<*>(fst<$>get focus)
+  a' <- get wAngle
+  when (abs (a-a')>=180) $ wAngle $= a'+(360*signum (a-a'))
+  wAGoal $= a
 display = do 
   clear [ ColorBuffer, DepthBuffer ]
   loadIdentity
@@ -85,8 +85,8 @@ display = do
       rotate wa (Vector3 0 1 0)
         
       c 0.8 0.8 0.8
-      foc <- get focus
-      sequence_ [preservingMatrix $ do
+      sequence_ [when (abs (ia exprs i-wa) < 0.90*(360.0/fromIntegral (length exprs)))
+                 $ preservingMatrix $ do
                     rotate (ia exprs i) (Vector3 0 (-1) 0)
                     translate $ v3 0 0 (-10000::GLfloat)
                     draw b
@@ -96,84 +96,6 @@ display = do
     Vector2 pos size <- get select
     para pos size
   swapBuffers
-quit = join (liftA2 writeFile (get saveFile) (show <$> get expr)) >> leaveMainLoop
-
-drag (Vector2 dx dy) = left (fromIntegral dx/3) >> up (fromIntegral dy/3)
-
-l ~~ f = get focus >>= \i -> expr $~ (_group.from _h._forestAt (reverse (i^._focus)).l%~f)
-getF i = view (_group.from _h._forestAt (reverse (i^._focus))) <$> get expr 
-infixr 4 ~~
-modText f = _head._Symbol ~~ f >> postRedisplay Nothing
-delChar = modText initSafe
-keyboardMouse k Down (Modifiers { ctrl = Down, shift = Down }) _ = shiftKeyDown k
-keyboardMouse k Down (Modifiers { ctrl = Down }) _ = ctrlKeyDown k
-keyboardMouse k Down _ _ = keyDown k
-keyboardMouse _ _ _ _ = return ()
-
-tryMod f p = get focus >>= \i -> fmap p (getF i) >>= \b -> if b then focus $= f i else return ()
-
-focusLeft = do
-  f <- getF =<< get focus
-  let m 0 = length f ; m n = n-1
-  focus $~ (_focus._head%~m)
-focusRight = do
-  f <- getF =<< get focus
-  let m n | null f = 0 ; m n = n+1
-  focus $~ (_focus._head%~m)
-focusDown = tryMod (_focus%~(0:)) (has (_head._Group))
-focusUp = focus $~ (_2%~initSafe)
-
-keyDown (Char '(') = deleteNode >> insertGroup >> insertSym
-keyDown (Char ')') = focusUp >> focusRight >> insertSym
-keyDown (Char ' ') = focusRight >> insertSym
-keyDown (Char '\r') = focusRight >> insertSym
-keyDown (Char '\b') = delChar
-keyDown (SpecialKey KeyDelete) = delChar
-keyDown (Char '\ESC') = quit
-keyDown (Char '\DEL') = deleteNode
-keyDown (SpecialKey KeyLeft) = focusLeft
-keyDown (SpecialKey KeyRight) = focusRight
-keyDown (SpecialKey KeyDown) = focusDown
-keyDown (SpecialKey KeyUp) = focusUp
-keyDown (Char c) = modText (++[c])
-keyDown _ = return ()
-ctrlKeyDown (SpecialKey KeyLeft) = dragLeft
-ctrlKeyDown (SpecialKey KeyRight) = dragRight
-ctrlKeyDown (SpecialKey KeyUp) = dragUp
-ctrlKeyDown (SpecialKey KeyDown) = dragDown
-ctrlKeyDown (Char 'c') = copyNode
-ctrlKeyDown (Char '\ETX') = copyNode
-ctrlKeyDown (Char 'v') = pasteNode
-ctrlKeyDown (Char '\SYN') = pasteNode 
-ctrlKeyDown (Char 's') = insertSym
-ctrlKeyDown (Char '\DC3') = insertSym
-ctrlKeyDown (Char 'g') = insertGroup
-ctrlKeyDown (Char '\a') = insertGroup
-ctrlKeyDown (Char 'q') = quit
-ctrlKeyDown c = print c
-shiftKeyDown (Char 'S') = deleteNode >> insertSym
-shiftKeyDown (Char '\DC3') = deleteNode >> insertSym
-shiftKeyDown (Char 'G') = wrapNode
-shiftKeyDown (Char '\a') = wrapNode
-shiftKeyDown c = print c
-
-pasteNode = get clipboard >>= maybe (return ()) (\n -> id ~~ (n:))
-copyNode = get focus >>= getF >>= \l -> clipboard $= listToMaybe l
-wrapNode = _head ~~ (Group . return) >> focusDown >> focusRight
-insertSym = id ~~ (Symbol "":)
-insertGroup = id ~~ (Group []:) >> focusDown
-deleteNode = id ~~ tailSafe
-dragBy foc = get focus >>= getF >>= \f -> case f of
-  [] -> return ()
-  (x:_) -> deleteNode >> foc >> id ~~ (x:)
-dragLeft = dragBy focusLeft
-dragRight = dragBy focusRight
-dragUp = dragBy focusUp
-dragDown = dragBy focusDown
-
-axes = renderPrimitive Lines $ sequence_ [c 1 0 0, v 0 0 0, v 1 0 0
-                                         ,c 0 1 0, v 0 0 0, v 0 1 0
-                                         ,c 0 0 1, v 0 0 0, v 0 0 1]
 para (Vector3 x y z) (Vector3 w h d) = renderPrimitive Quads $ sequence_
          [p1, p3, p7, p5
          , p5, p6, p8, p7
@@ -182,9 +104,53 @@ para (Vector3 x y z) (Vector3 w h d) = renderPrimitive Quads $ sequence_
          , p3, p4, p8, p7
          , p2, p4, p8, p6]
   where [p1,p2,p3,p4,p5,p6,p7,p8] = liftM3 v [x,x+w] [y,y+h] [z,z+d]
-cube w = para (pure (-w/2)) (pure w)
+-- cube w = para (pure (-w/2)) (pure w)
+-- axes = renderPrimitive Lines $ sequence_ [c 1 0 0, v 0 0 0, v 1 0 0
+--                                          ,c 0 1 0, v 0 0 0, v 0 1 0
+--                                          ,c 0 0 1, v 0 0 0, v 0 0 1]
 
+quit = join (liftA2 writeFile (get saveFile) (show <$> get expr)) >> leaveMainLoop
 
+keyboardMouse (Char c) Down _ _ = modText (++[c])
+keyboardMouse k Down _ _ = putStrLn $ "Unhandled key: "++show k
+keyboardMouse _ _ _ _ = return ()
+bindings = [
+  -- Movement
+  (key (SpecialKey KeyLeft),focusLeft),
+  (key (SpecialKey KeyRight),focusRight),
+  (key (SpecialKey KeyUp),focusUp),
+  (key (SpecialKey KeyDown),focusDown),
+  (ctl (SpecialKey KeyLeft),dragLeft),
+  (ctl (SpecialKey KeyRight),dragRight),
+  (ctl (SpecialKey KeyUp),dragUp),
+  (ctl (SpecialKey KeyDown),dragDown),
+  -- Manipulation
+  (ctl (Char 's'),insertSym),
+  (ctl (Char '\DC3'),insertSym),
+  (ctl (Char 'g'),insertGroup),
+  (ctl (Char '\a'),insertGroup),
+  (ctl_shift (Char 'S'),replaceWithSym),
+  (ctl_shift (Char '\DC3'),replaceWithSym),
+  (ctl_shift (Char 'G'),wrapNode),
+  (ctl_shift (Char '\a'),wrapNode),
+  (key (Char '\DEL'),deleteNode),
+  (ctl (Char 'c'),copyNode),
+  (ctl (Char '\ETX'),copyNode),
+  (ctl (Char 'v'),pasteNode),
+  (ctl (Char '\SYN'),pasteNode),
+  (key (Char '('),openGroup),
+  (key (Char ')'),closeGroup),
+  (key (Char ' '),outsertSym),
+  (key (Char '\r'),outsertSym),
+  (key (Char '\b'),delChar),
+  -- Evaluation
+  (ctl (Char 'e'),evalNode),
+  (ctl (Char '\ENQ'),evalNode),
+  -- Other
+  (key (Char '\ESC'),quit)
+  ]
 
-
+evalNode = (get >=> getF) focus >>= \l -> case l of
+  [] -> return ()
+  (e:_) -> print =<< eval (toELVal (ELSym <$> e))
 

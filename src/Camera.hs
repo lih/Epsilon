@@ -27,6 +27,9 @@ initCamera = do
   smoothTr inter angleY aYGoal
   smoothTr (liftA2 . inter) center centerGoal
   mouseHooks <+< mouse
+  dragHooks <+< drag
   where mouse WheelUp _ _ = zoomIn ; mouse WheelDown _ _ = zoomOut
         mouse _ _ _ = return ()
-  
+        drag (Vector2 dx dy) = left (fromIntegral dx/3) >> up (fromIntegral dy/3)
+
+

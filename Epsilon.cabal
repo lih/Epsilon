@@ -15,6 +15,7 @@ data-files:          resources/*.ttf
 executable Epsilon
   build-depends:       base ==4.6.*, containers ==0.5.*, OpenGL ==2.8.*, GLUT ==2.4.*, FTGL ==1.333.*, lens ==3.9.*, hinduce-missingh ==0.0.*, clock ==0.3.*, safe ==0.3.*, directory ==1.2.*
   hs-source-dirs:      src
+  ghc-options:         -W
   main-is:             Epsilon.hs
 
 source-repository head

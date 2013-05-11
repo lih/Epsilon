@@ -1,38 +1,65 @@
-module Input (initInput,(<+<),mouseHooks,motionHooks,dragHooks,DragCallback(..),keyboardHooks) where
+{-| A helper module to handle keyboard and mouse input -}
+module Input (
+  -- * Hooks
+  Hooks,
+  mouseHooks,motionHooks,
+  keyboardHooks,
+  DragCallback,dragHooks,
+  -- * Environment
+  initInput,(<+<),
+  -- * Utils
+  Event(..),bindEv,
+  key,ctl,ctl_shift
+  ) where
 
 import Graphics
 import Utils
+import qualified Data.Map as M
+import Hooks
 
-type Hook h = IORef [h]
-
-keyboardHooks = mkRef [] :: Hook KeyboardMouseCallback
-mouseHooks = mkRef [] :: Hook MouseCallback
-motionHooks = mkRef [] :: Hook MotionCallback
+-- |A drag callback takes the delta vector as an argument
 type DragCallback = Vector2 GLint -> IO ()
-dragHooks = mkRef [] :: Hook DragCallback
 
+-- |The hook for keyboard events
+keyboardHooks = mkHooks [] :: Hooks KeyboardMouseCallback
+-- |The hook for mouse events
+mouseHooks = mkHooks [] :: Hooks MouseCallback
+-- |The hook for mouse motion events
+motionHooks = mkHooks [] :: Hooks MotionCallback
+-- |The hook for drag events
+dragHooks = mkHooks [] :: Hooks DragCallback
 
-hs <+< h = hs $~ (h:)
-
+-- |Initializes the keyboard and mouse callbacks and registers the drag hooks
 initInput = do
-  keyboardMouseCallback $= Just (\k s m p -> get keyboardHooks >>= mapM_ (\h -> h k s m p))
-  mouseCallback $= Just (\b s p -> mapM_ (\h -> h b s p) =<< get mouseHooks)
-  motionCallback $= Just (\p -> mapM_ ($p) =<< get motionHooks)
+  keyboardMouseCallback $= (Just $ \k s m p -> do
+                               bs <- get evMap
+                               case M.lookup (mkEv m k) bs of
+                                 Just a | s==Down -> a
+                                 _ -> runHooks keyboardHooks $ \h -> h k s m p)
+  mouseCallback $= Just (\b s p -> runHooks mouseHooks (\h -> h b s p))
+  motionCallback $= Just (\p -> runHooks motionHooks ($p))
   mouseHooks <+< dragH
   motionHooks <+< dragMotH
-  
+
 dragSt = mkRef (False,v2 0 (0::GLint))
 dragH LeftButton Down (Position x y) = dragSt $= (True,v2 x y)
 dragH LeftButton Up _ = dragSt $~ (_1.~False)
 dragH _ _ _ = return ()
-
 dragMotH (Position x y) = do
   let next = v2 x y
   (dragging,prev) <- get dragSt
   when dragging $ do
     dragSt $~ (_2.~next)
-    get dragHooks >>= mapM_ ($liftA2 (-) next prev)
+    runHooks dragHooks ($ liftA2 (-) next prev)
 
-
-
-
+-- |A keyboard event
+data Event = KB (KeyState,KeyState,KeyState) Key
+           deriving (Eq,Ord)
+mkEv (Modifiers s c a) k = KB (s,c,a) k
+evMap = mkRef (M.empty :: M.Map Event (IO ()))
+-- |Creates a keyboardMouseCallback from a simple callback called when the Control key is down.
+key = KB (Up,Up,Up)
+ctl = KB (Up,Down,Up)
+ctl_shift = KB (Down,Down,Up)
+-- |Binds an action to an keyboard event
+bindEv e m = evMap $~ M.insert e m
