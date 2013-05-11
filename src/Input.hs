@@ -9,13 +9,14 @@ module Input (
   initInput,(<+<),
   -- * Utils
   Event(..),bindEv,
-  key,ctl,ctl_shift
+  key,ctl,ctl_shift,alt_
   ) where
 
 import Graphics
 import Utils
 import qualified Data.Map as M
 import Hooks
+import Data.Char
 
 -- |A drag callback takes the delta vector as an argument
 type DragCallback = Vector2 GLint -> IO ()
@@ -57,9 +58,22 @@ data Event = KB (KeyState,KeyState,KeyState) Key
            deriving (Eq,Ord)
 mkEv (Modifiers s c a) k = KB (s,c,a) k
 evMap = mkRef (M.empty :: M.Map Event (IO ()))
--- |Creates a keyboardMouseCallback from a simple callback called when the Control key is down.
+
+-- |Binds an action to a keyboard event
+bindEv e m = do
+  let newEvs (KB (s,c,a) (Char ch)) | isLower ch =
+        return $ KB (s,c,a) (Char (chr (if ch'>=0 then ch' else ord ch)))
+        where ch' = ord ch-96*toBit c
+      newEvs (KB (s,Down,a) (Char ' ')) = return $ KB (s,Down,a) (Char '\NUL')
+      newEvs _ = mzero
+      toBit Up = 0 ; toBit Down = 1
+  forM_ (e:newEvs e) $ \e -> evMap $~ M.insert e m
+
+-- |Creates an event where no modifier keys are pressed
 key = KB (Up,Up,Up)
+-- |Creates an event where only the control key is pressed
 ctl = KB (Up,Down,Up)
+-- |Creates an event where only the control and shift keys are pressed
 ctl_shift = KB (Down,Down,Up)
--- |Binds an action to an keyboard event
-bindEv e m = evMap $~ M.insert e m
+-- |Creates an event where only the alt key is pressed
+alt_ = KB (Up,Up,Down)

@@ -13,12 +13,13 @@ module ELisp(
   ) where
 
 import Prelude hiding (mapM,sequence)
-import Utils
-import Graphics (($~),get)
+import Utils hiding (focus)
+import Graphics (($=),($~),get)
 import qualified Data.Map as M
 import ELisp.Joinable
 import ELisp.ELVal
 import Input
+import Model
 
 values = mkRef (M.empty :: M.Map Int ELVal)
 
@@ -61,18 +62,29 @@ initELisp = do
   mapM_ (uncurry (setVal . intern)) [
     ("match",lambdaSp),
     ("`",backquoteSp),
+    builtin "macro" (\ [Lambda s f] -> pure (Special s (const f))),
     builtin "+" (pure . foldl (\(Int n) (Int n') -> Int (n+n')) (Int 0)),
     builtin "*" (pure . foldl (\(Int n) (Int n') -> Int (n*n')) (Int 1)),
     builtin "/" (pure . foldl1 (\(Int n) (Int n') -> Int (n`div`n'))),
     builtin "-" (pure . foldl1 (\(Int n) (Int n') -> Int (n-n'))),
-    builtin "print" (\[a] -> action (print a)),
-    builtin "set" (\ [Sym s _,v] -> action (setVal s v)),
+    
     builtin "do" (pure . lastDef nil),
+    builtin "print" (\[a] -> action (print a)),
     builtin "map" bMap,
-    builtin "macro" (\ [Lambda s f] -> pure (Special s (const f))),
+
     builtin "bind" (\ [e,Lambda _ f] -> action $ case fromELVal e of
                        Just e -> bindEv e (void $ joined $ f [])
-                       Nothing -> return ())
+                       Nothing -> return ()),
+    builtin "set" (\ [Sym s _,v] -> action (setVal s v)),
+    builtin "get-focus" (\ _ -> impure (toELVal<$>get focus)),
+    builtin "swap-focus" (\ [Lambda _ f] -> action $ do
+                             foc <- joined =<< (f . return . toELVal<$>get focus)
+                             maybe (return()) (\e -> focus $= e) (fromELVal foc)),
+    builtin "get-selection" (\ _ -> impure (toELVal<$>(get focus>>=getF))),
+    builtin "swap-selection" (\ [Lambda _ f] -> action $ do
+                               for <-  getF =<< get focus
+                               for' <- joined $ f [toELVal for]
+                               id ~~ maybe id const (fromELVal for'))
     ]
   where bMap [Lambda _ f,List l] = List <$> sequenceA [f [x] | x <- l]
         bMap l = pure (List l)
@@ -99,8 +111,14 @@ lambdaSp = Special (mkSym "#<spe:lambda>") lambda
                     Just l -> eval' (M.union l locals) expr
                     Nothing -> k v
           Nothing -> error $ "Invalid syntax for lambda special form: "++show args
-match (List [Sym _ (Just "?"),Sym n _]) x = return (M.singleton n x)
-match (List a) (List b) | length a==length b = M.unions <$> sequence (zipWith match a b)
+match (List [Sym s _,Sym n _]) x | s==intern "?" = return (M.singleton n x)
+match (List a) (List b) | length (zip a b)>=length a-1 = 
+  M.unions <$> sequence (zipWith match' (tails a) (tails b))
+  where match' [List [Sym s _,Sym n _]] l | s==intern "|" =
+          return (M.singleton n (List l))
+        match' (p:_) (x:_) = match p x
+        match' [] [] = return M.empty
+        match' _ _ = mzero
 match (Sym n _) (Sym n' _) | n==n' = return M.empty
 match (Int n) (Int n') | n==n' = return M.empty
 match (Char c) (Char c') | c==c' = return M.empty

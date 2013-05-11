@@ -48,6 +48,12 @@ instance ELValLike Char where
   fromELVal (Char c) = Just c
   fromELVal _ = Nothing
   toELVal = Char
+instance ELValLike a => ELValLike (Maybe a) where
+  fromELVal (List [Sym s _,v]) | s==intern "Just" = Just<$>fromELVal v
+  fromELVal (Sym s _) | s==intern "Nothing" = pure (Nothing)
+  fromELVal _ = mzero
+  toELVal (Just a) = List [mkSym "Just",toELVal a]
+  toELVal Nothing = mkSym "Nothing"
 instance ELValLike a => ELValLike [a] where
   fromELVal (List l) = traverse fromELVal l
   fromELVal _ = Nothing

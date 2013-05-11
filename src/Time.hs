@@ -3,10 +3,23 @@ module Time where
 import Graphics
 import Utils
 import System.Clock
+import Foreign.C.Types
 
-smoothTr i v g = animate (\d -> (get g >>= \g -> v$~i (fromIntegral d*7/1000000) g)
-                                >> postRedisplay Nothing
-                                >> return True) 40
+class Approximate a where
+  near :: a -> a -> Bool
+instance Approximate CFloat where
+  near a b = abs (a-b)<=0.05
+instance Approximate a => Approximate (Vector3 a) where
+  near va vb = near<$>va<*>vb & \(Vector3 a b c) -> a&&b&&c
+instance Approximate a => Approximate (Vector2 a) where
+  near va vb = near<$>va<*>vb & \(Vector2 a b) -> a&&b
+
+smoothTr i v g = flip animate 40 $ \d -> do
+  old <- get v
+  get g >>= \g -> v$~i (fromIntegral d*7/1000000) g
+  new <- get v
+  unless (near old new) $ postRedisplay Nothing
+  return True
 animate f delay = animate =<< (microseconds <$> getTime Realtime)
   where animate start = do
           cur <- microseconds <$> getTime Realtime
