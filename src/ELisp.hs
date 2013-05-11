@@ -75,6 +75,9 @@ initELisp = do
     builtin "bind" (\ [e,Lambda _ f] -> action $ case fromELVal e of
                        Just e -> bindEv e (void $ joined $ f [])
                        Nothing -> return ()),
+    builtin "unbind" (\ [e] -> action $ case fromELVal e of
+                         Just e -> evMap $~ M.delete e
+                         Nothing -> return ())
     builtin "set" (\ [Sym s _,v] -> action (setVal s v)),
     builtin "get-focus" (\ _ -> impure (toELVal<$>get focus)),
     builtin "swap-focus" (\ [Lambda _ f] -> action $ do
