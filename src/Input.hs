@@ -8,7 +8,7 @@ module Input (
   -- * Environment
   initInput,(<+<),
   -- * Utils
-  Event(..),bindEv,
+  Event(..),bindEv,unbindEv,
   key,ctl,ctl_shift,alt_
   ) where
 
@@ -59,15 +59,16 @@ data Event = KB (KeyState,KeyState,KeyState) Key
 mkEv (Modifiers s c a) k = KB (s,c,a) k
 evMap = mkRef (M.empty :: M.Map Event (IO ()))
 
+newEvs (KB (s,c,a) (Char ch)) | isLower ch =
+  return $ KB (s,c,a) (Char (chr (if ch'>=0 then ch' else ord ch)))
+  where ch' = ord ch-96*toBit c
+newEvs (KB (s,Down,a) (Char ' ')) = return $ KB (s,Down,a) (Char '\NUL')
+newEvs _ = mzero
+toBit Up = 0 ; toBit Down = 1
 -- |Binds an action to a keyboard event
-bindEv e m = do
-  let newEvs (KB (s,c,a) (Char ch)) | isLower ch =
-        return $ KB (s,c,a) (Char (chr (if ch'>=0 then ch' else ord ch)))
-        where ch' = ord ch-96*toBit c
-      newEvs (KB (s,Down,a) (Char ' ')) = return $ KB (s,Down,a) (Char '\NUL')
-      newEvs _ = mzero
-      toBit Up = 0 ; toBit Down = 1
-  forM_ (e:newEvs e) $ \e -> evMap $~ M.insert e m
+bindEv e m = forM_ (e:newEvs e) $ \e -> evMap $~ M.insert e m
+-- |Unbinds the given keyboard event
+unbindEv e = forM_ (e:newEvs e) $ \e -> evMap $~ M.delete e
 
 -- |Creates an event where no modifier keys are pressed
 key = KB (Up,Up,Up)

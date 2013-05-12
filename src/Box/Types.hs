@@ -16,13 +16,14 @@ data DrawBox = DrawBox {
   }
 $( makeLenses ''DrawBox )
 
-class Drawable d where
-  nullDraw :: d
-  appendBy :: (forall a. Lens' (Vector3 a) a) -> [d] -> d
-  _draw :: Lens' d  (IO ())
+class Boxed d where
   _size :: Lens' d (Vector3 GLfloat)
   _pos :: Lens' d (Vector3 GLfloat)
   _center :: Lens' d (Vector3 GLfloat)
+  appendBy :: (forall a. Lens' (Vector3 a) a) -> [d] -> d
+class Drawable d where
+  nullDraw :: d
+  _draw :: Lens' d  (IO ())
 class Scalable d where
   scaled :: Vector3 GLfloat -> d -> d
 

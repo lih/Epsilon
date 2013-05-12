@@ -1,13 +1,15 @@
-{-# LANGUAGE Rank2Types, ScopedTypeVariables #-}
+{-# LANGUAGE Rank2Types, ScopedTypeVariables, NoMonomorphismRestriction #-}
 {- |Module describing the Epsilon Lisp environment. -}
 module ELisp(
   -- * Types
   ELVal(..),ELValLike(..),
+  action,
   -- * Environment
   initELisp,
   nil,
   intern,newSym,setVal,getVal,
   eval,
+  registerBuiltin,wrap,
   -- * Parsing
   ELSym(..)
   ) where
@@ -20,14 +22,22 @@ import ELisp.Joinable
 import ELisp.ELVal
 import Input
 import Model
+import Box
 
 values = mkRef (M.empty :: M.Map Int ELVal)
 
+unwrap f = \a -> case toELVal a of
+  List l -> fromELVal <$> f l
+  _ -> pure Nothing
+wrap f = \a -> case fromELVal (List a) of
+  Just a -> toELVal <$> f a
+  Nothing -> pure nil
+  
 -- |The nil value
 nil = List []
 -- ^Although destructive in practice, 'intern' behaves just like a pure function, so it can be made unsafe
--- |Creates a unique symbol 
-newSym = intern' Nothing
+-- |Creates a return value from an IO action
+action a = impure (a >> return nil)
 -- |Gets the value of the symbol
 getVal s = fromMaybe nil . M.lookup s <$> get values
 -- |Changes the value of the symbol
@@ -59,41 +69,35 @@ Initializes the environment, adding builtins and special forms:
   * other builtins: @map@ and @print@
 -}
 initELisp = do
-  mapM_ (uncurry (setVal . intern)) [
-    ("match",lambdaSp),
-    ("`",backquoteSp),
-    builtin "macro" (\ [Lambda s f] -> pure (Special s (const f))),
-    builtin "+" (pure . foldl (\(Int n) (Int n') -> Int (n+n')) (Int 0)),
-    builtin "*" (pure . foldl (\(Int n) (Int n') -> Int (n*n')) (Int 1)),
-    builtin "/" (pure . foldl1 (\(Int n) (Int n') -> Int (n`div`n'))),
-    builtin "-" (pure . foldl1 (\(Int n) (Int n') -> Int (n-n'))),
+  mapM_ (uncurry (setVal . intern)) [("match",lambdaSp),("`",backquoteSp)]
+  registerBuiltin "macro" (\ [Lambda s f] -> pure (Special s (const f)))
+  registerBuiltinW "+" (pure . (sum :: [Int] -> Int))
+  registerBuiltinW "*" (pure . (product :: [Int] -> Int))
+  registerBuiltinW "/" (pure . foldl1 (div :: Int -> Int -> Int))
+  registerBuiltinW "-" (pure . foldl1 ((-) :: Int -> Int -> Int))
     
-    builtin "do" (pure . lastDef nil),
-    builtin "print" (\[a] -> action (print a)),
-    builtin "map" bMap,
+  registerBuiltin "do" (pure . lastDef nil)
+  registerBuiltin "print" (\[a] -> action (print (a::ELVal)))
+  registerBuiltinW "map" (\ (Lambda _ f,l) -> traverse (f . return) (l::[ELVal])) 
 
-    builtin "bind" (\ [e,Lambda _ f] -> action $ case fromELVal e of
-                       Just e -> bindEv e (void $ joined $ f [])
-                       Nothing -> return ()),
-    builtin "unbind" (\ [e] -> action $ case fromELVal e of
-                         Just e -> evMap $~ M.delete e
-                         Nothing -> return ())
-    builtin "set" (\ [Sym s _,v] -> action (setVal s v)),
-    builtin "get-focus" (\ _ -> impure (toELVal<$>get focus)),
-    builtin "swap-focus" (\ [Lambda _ f] -> action $ do
-                             foc <- joined =<< (f . return . toELVal<$>get focus)
-                             maybe (return()) (\e -> focus $= e) (fromELVal foc)),
-    builtin "get-selection" (\ _ -> impure (toELVal<$>(get focus>>=getF))),
-    builtin "swap-selection" (\ [Lambda _ f] -> action $ do
-                               for <-  getF =<< get focus
-                               for' <- joined $ f [toELVal for]
-                               id ~~ maybe id const (fromELVal for'))
-    ]
-  where bMap [Lambda _ f,List l] = List <$> sequenceA [f [x] | x <- l]
-        bMap l = pure (List l)
-        builtin n f = (n,Lambda (mkSym $ "#<builtin:"++n++">") f)
-        action a = impure (a >> return nil)
+  registerBuiltinW "text-box" (\ [s] -> impure (DT <$> (atomic $ textBox s)))
+  registerBuiltinW "horiz" (\ l -> pure (glH (l :: [DrawTree DrawBox])))
+  registerBuiltinW "vert" (\ l -> pure (glV (l :: [DrawTree DrawBox])))
+    
+  registerBuiltinW "bind" (\ (e,Lambda _ f) -> action (bindEv e (void $ joined $ f [])))
+  registerBuiltinW "unbind" (\ [e] -> action (unbindEv e))
 
+  registerBuiltin "set" (\ [Sym s _,v] -> action (setVal s v))
+  registerBuiltin "get-focus" (\ _ -> impure (toELVal<$>get focus))
+  registerBuiltin "swap-focus" (\ [Lambda _ f] -> action $ do
+                                   foc <- joined =<< (unwrap f . (:[])<$>get focus)
+                                   maybe (return()) (\e -> focus $= e) foc)
+  registerBuiltin "get-selection" (\ _ -> impure (toELVal<$>(get focus>>=getF)))
+  registerBuiltin "swap-selection" (\ [Lambda _ f] -> action $ do
+                                       for <-  getF =<< get focus
+                                       for' <- joined $ unwrap f [for]
+                                       id ~~ maybe id const for')
+        
 -- |Evaluates the given expression
 eval = joined . eval' M.empty
 eval' locals = eval''
@@ -135,3 +139,6 @@ backquoteSp = Special (mkSym "#<spe:backquote>") bq
                 ev x = return (pure x)
         bq _ _ = pure nil 
 
+registerBuiltinW b f = registerBuiltin b (wrap f)
+registerBuiltin b f = setVal (intern name) (Lambda (mkSym name) f)
+  where name = "#<builtin:"++b++">"

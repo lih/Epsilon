@@ -1,11 +1,11 @@
-{-# LANGUAGE Rank2Types, NoMonomorphismRestriction, ImplicitParams, ParallelListComp, ImpredicativeTypes #-}
+{-# LANGUAGE Rank2Types, NoMonomorphismRestriction, ImplicitParams, ParallelListComp, FlexibleInstances #-}
 
 module Box(
   module Box.Types,
   move,moveTo,centered,padded,scaled',
-  (#-),(#-#),(#|),(#|#),
+  (#-),(#-#),(#|),(#|#),glH,glV,
   
-  textBox,syntaxBox,draw
+  atomic,textBox,syntaxBox,draw
   ) where
 
 import Graphics.Rendering.OpenGL.GL.QueryUtils
@@ -27,29 +27,41 @@ glue x bs = (sz,cen,zipWith f cs offsets)
         sz = cen *+* max' (sequenceA $ zipWith (*-*) ds cs) & x.~last offsets
         cen = max' (sequenceA cs) & x.~(last offsets/2)
         f c off = cen*-*c & x.~off
-instance Drawable DrawBox where
-  nullDraw = DrawBox (Box (pure 0) (pure 0) (pure 0)) (return())
-  appendBy l bs = DrawBox (Box (pure 0) c sz) dr
-    where (sz,c,ps) = glue l [(b^._size,b^._center) | b <- bs]
-          dr = sequence_ [drawP (moveTo b p) | b <- bs | p <- ps]
-  _draw = drawB
+
+instance Boxed (Box GLfloat) where
+  _size = bSize
+  _pos = bPos
+  _center = bCenter
+  appendBy l bs = Box (pure 0) c sz
+    where (sz,c,_) = glue l [(b^._size,b^._center) | b <- bs]
+instance Boxed DrawBox where
   _pos = box.bPos
   _size = box.bSize
   _center = box.bCenter
-instance Drawable a => Drawable (DrawTree a) where
-  nullDraw = DrawTree nullDraw []
+  appendBy l bs = DrawBox (Box (pure 0) c sz) dr
+    where (sz,c,ps) = glue l [(b^._size,b^._center) | b <- bs]
+          dr = sequence_ [drawP (moveTo b p) | b <- bs | p <- ps]
+instance Boxed a => Boxed (DrawTree a) where
   appendBy l ts = DrawTree (appendBy l bs) ss'
     where (bs,ss) = unzip [(b,s) | DrawTree b s <- ts]
           ss' = foldr (mergeBy ((<)`on`fst)) []
                 [map (_2.root%~(`move`p)) s | (p,s) <- zip ps ss]
           (_,_,ps) = glue l [(b^._size,b^._center) | b <- bs]
-  _draw = droot._draw
   _pos = droot._pos
   _size = droot._size
   _center = droot._center
+
+instance Drawable DrawBox where
+  nullDraw = DrawBox (Box (pure 0) (pure 0) (pure 0)) (return())
+  _draw = drawB
+instance Drawable a => Drawable (DrawTree a) where
+  nullDraw = DrawTree nullDraw []
+  _draw = droot._draw
+
+instance Scalable (Box GLfloat) where
+  scaled sc (Box p c s) = liftA2 (*) sc&(Box<$>($p)<*>($c)<*>($s))
 instance Scalable DrawBox where
-  scaled sc (DrawBox (Box p c s) d) = DrawBox (scl&(Box<$>($p)<*>($c)<*>($s))) (scalev sc >> d)
-    where scl = liftA2 (*) sc
+  scaled sc (DrawBox b d) = DrawBox (scaled sc b) (scalev sc >> d)
 instance Scalable a => Scalable (DrawTree a) where
   scaled sc (DrawTree a ss) = DrawTree (scaled sc a) (map (_2%~fmap (scaled sc)) ss)
 
@@ -60,7 +72,7 @@ moveTo db v = db&_pos .~ v
 centered db = moveTo db (negate <$> c)&_center.~c
   where c = (db^._size <&> (/2))
 scaled' x = scaled (pure x) 
-align' :: Drawable d => (forall a. Lens' (Vector3 a) a) -> (GLfloat -> GLfloat) -> d -> d
+align' :: Boxed d => (forall a. Lens' (Vector3 a) a) -> (GLfloat -> GLfloat) -> d -> d
 align' x f b = b&_center.x.~f (b^._size.x)
 data Alignment = T | B | L | R | C
 align T = align' vy (max 0)
@@ -84,8 +96,8 @@ infixl 5 %-% ; infixl 4 %|% ; infixl 3 #- ; infixl 2 #| ; infixl 3 #-# ; infixl 
 
 textBox text = do
   [x,y,z,x',_,_] <- getFontBBox ?font text <&> map CFloat
-  let vl = v3 x y z
-      vs = v3 (x'-x) fontSize (?depth+10) ; vc = v3 (vs^.vx/2) (?desc+36) (?depth/2+5)
+  let vl = v3 x y z ; vc = v3 (vs^.vx/2) (?desc+36) (?depth/2+5)
+      vs = v3 (x'-x) fontSize (?depth+10)
   return $ DrawBox (Box (pure 0) vc vs)
     $ translate (v3 0 (y- ?desc) 5*-*vl)
     >> renderFont ?font text All
@@ -110,8 +122,8 @@ syntaxBox (Symbol a) = atomic $ col . glH
 
 syntaxBox (Group g@[Symbol op,_]) | op`elem`["?","!","|","`","@"] = 
   withSubs (syntaxes g) $ \[op,a] cur -> op#-#a#- cur
-syntaxBox (Group g@[Symbol op,_,_]) | op`elem`["+","*","-","%","/",">>=",",","<=",">=","<",">",".","<>","=","<-"] =
-  withSubs subs $ \[op,a,b] cur -> glH [[a,op,b]%-%hPad 30,cur]
+syntaxBox (Group g@(Symbol op:_:_:_)) | op`elem`["+","*","-","%","/",">>=",",","<=",">=","<",">",".","<>","=","<-","horizontal"] =
+  withSubs subs $ \(op:args) cur -> glH [args%-%(hPad 30#-op#-hPad 30),cur]
   where toUnicode x = fromMaybe x $ lookup x [("<-","\x2190"),("<>","\x2260")
                                              ,(">=","\x2265"),("<=","\x2264")]
         subs = syntaxes (g&_head._Symbol%~toUnicode)

@@ -5,8 +5,8 @@ import Utils
 import Time
 import Input
 
-angleX = mkRef (0::GLfloat) ; aXGoal = mkRef (30::GLfloat)
-angleY = mkRef (0::GLfloat) ; aYGoal = mkRef (30::GLfloat)
+angleX = mkRef (0::GLfloat) ; aXGoal = mkRef (25::GLfloat)
+angleY = mkRef (0::GLfloat) ; aYGoal = mkRef (15::GLfloat)
 scl = mkRef (1::GLfloat) ; sclGoal = mkRef (1::GLfloat)
 center = mkRef (pure 0::Vector3 GLfloat); centerGoal = mkRef (pure 0::Vector3 GLfloat)
 angleDel = 7

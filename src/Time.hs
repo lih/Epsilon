@@ -8,7 +8,7 @@ import Foreign.C.Types
 class Approximate a where
   near :: a -> a -> Bool
 instance Approximate CFloat where
-  near a b = abs (a-b)<=0.05
+  near a b = abs (a-b)<=0.001
 instance Approximate a => Approximate (Vector3 a) where
   near va vb = near<$>va<*>vb & \(Vector3 a b c) -> a&&b&&c
 instance Approximate a => Approximate (Vector2 a) where

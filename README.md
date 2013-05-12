@@ -49,7 +49,7 @@ The install went okay ? Good !
 Now just enter `Epsilon` into a shell to start your first session. 
 You should promptly be faced with a view similar to this :
 
-<img src='epsilon-startup.png' alt='Epsilon Startup' width='50%' />
+![Test](demo/test.gif)
 
 You may now start editing ! The following commands are available :
 
@@ -83,10 +83,8 @@ Here is what you can currently do within the Lisp Environment:
 
   * Add/Remove keybindings to expand functionality (primitives `bind`
     and `unbind`)
-
   * Get/Modify the current focus to move around (primitives
     `get-focus` and `swap-focus`)
-
   * Get/Modify the selection to modify the structure (primitives
     `get-selection` and `swap-selection`)
 

@@ -1,19 +1,27 @@
-module ELisp.ELVal where
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+module ELisp.ELVal(
+  ELVal(..),ELValLike(..),
+  intern,mkSym,newSym,
+  ELSym(..)
+  ) where
 
 import System.IO.Unsafe (unsafePerformIO)
-import Graphics (($=),get)
+import Graphics (($=),get,GLfloat)
 import qualified Graphics as G
 import Trees
 import qualified Data.Map as M
 import ELisp.Joinable
 import Utils
 import Input
+import Box.Types
 
 -- |The Epsilon Lisp datatype
 data ELVal = List [ELVal]
            | Sym Int (Maybe String)
            | Char Char
            | Int Int
+           | GLfloat GLfloat
+           | DT (DrawTree DrawBox)
            | Special ELVal (M.Map Int ELVal -> [ELVal] -> Joinable ELVal)
            | Lambda ELVal ([ELVal] -> Joinable ELVal)
 instance Show ELVal where
@@ -21,6 +29,8 @@ instance Show ELVal where
   show (Sym n s) = fromMaybe ("#"++show n) s
   show (Char c) = show c
   show (Int n) = show n
+  show (GLfloat f) = show f
+  show (DT _) = "#<drawtree>"
   show (Special l _) = show l
   show (Lambda l _) = show l
 
@@ -31,6 +41,8 @@ intern' s = get obarray >>= \(o,n) -> case M.lookup<$>s<!>pure o of
 -- |Returns the unique symbol associated to the given name
 intern = unsafePerformIO . intern' . Just
 mkSym s = Sym (intern s) (Just s)
+-- |Creates a new unique symbol
+newSym = intern' Nothing
 
 -- |The class of all types morphic to ELVal
 class ELValLike t where
@@ -44,10 +56,18 @@ instance ELValLike Int where
   fromELVal (Int n) = Just n
   fromELVal _ = Nothing
   toELVal = Int
+instance ELValLike GLfloat where
+  fromELVal (GLfloat n) = Just n
+  fromELVal _ = Nothing
+  toELVal = GLfloat
 instance ELValLike Char where
   fromELVal (Char c) = Just c
   fromELVal _ = Nothing
   toELVal = Char
+instance ELValLike (DrawTree DrawBox) where
+  fromELVal (DT t) = Just t
+  fromELVal _ = Nothing
+  toELVal = DT
 instance ELValLike a => ELValLike (Maybe a) where
   fromELVal (List [Sym s _,v]) | s==intern "Just" = Just<$>fromELVal v
   fromELVal (Sym s _) | s==intern "Nothing" = pure (Nothing)
@@ -93,9 +113,11 @@ instance ELValLike ELSym where
   fromELVal l = ELSym <$> msum [case l of Sym _ n -> n ; _ -> mzero
                               ,show <$> (fromELVal l :: Maybe Char)
                               ,show <$> (fromELVal l :: Maybe Int)
+                              ,show <$> (fromELVal l :: Maybe GLfloat)
                               ,show <$> (fromELVal l :: Maybe String)]
   toELVal (ELSym s) = fromMaybe (mkSym s) $ msum [
     toELVal <$> (readMay s :: Maybe String),
     toELVal <$> (readMay s :: Maybe Char),
-    toELVal <$> (readMay s :: Maybe Int)]
+    toELVal <$> (readMay s :: Maybe Int),
+    toELVal <$> (readMay s :: Maybe GLfloat)]
 
