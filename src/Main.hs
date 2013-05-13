@@ -15,7 +15,7 @@ module Main(
 import Prelude hiding (sequence,mapM)
 import Graphics
 import Time
-import Utils hiding (focus)
+import Utils
 import Box
 import Trees
 import Camera
@@ -38,33 +38,35 @@ main = do
   withFont $ do
     initialDisplayMode $= [DoubleBuffered,WithDepthBuffer,WithAlphaComponent]
     createWindow "Epsilon"
-    initELisp
-    varHooks expr <+< (resetAngle >> resetCache)
-    varHooks focus <+< (resetAngle >> resetSelection)
-    initSave file >>= \es -> expr $= es
+    initELisp ; initTime
+    initInput ; initCamera ; initSelection
     clearColor $= Color4 0.1 0.1 0.1 1.0
     displayCallback $= display
     reshapeCallback $= Just reshape
-    initInput ; initCamera ; initSelection
     depthFunc $= Just Lequal
     blend $= Enabled
     blendFunc $= (SrcAlpha,OneMinusSrcAlpha)
     smoothTr inter wAngle wAGoal
-    keyboardHooks <+< keyboardMouse
     mapM_ (uncurry bindEv) bindings
+    registerAll
+    keyboardHooks <+< keyboardMouse
+    varHooks currentNode <+< (resetAngle >> resetCache)
+    varHooks selection <+< (resetAngle >> resetSelection)
+    initSave file >>= \es -> forM_ es $ \e -> currentNode $= Insert e
     mainLoop
+
 
 -- |The drawtree cache (updated only when the expression changes)
 cache = mkRef ([] :: [DrawTree DrawBox])
 -- |Resets the expression drawtree cache (called when the expression is changed)
 resetCache = do
-  bs <- mapM (fmap centered . syntaxBox) =<< get expr
+  bs <- mapM (fmap centered . syntaxBox) =<< get trees
   cache $= bs
   resetSelection
   postRedisplay Nothing
--- |Resets the selection goal coordinates (called when the focus or expression change)
+-- |Resets the selection goal coordinates (called when the selection or expression change)
 resetSelection = do
-  (cur,f) <- get focus
+  (cur,f) <- get selection
   ch <- get cache
   let (p,_,s) | length ch==cur = (pure (-5),pure 5,pure 10)
               | otherwise = (pos,t^?!i._center,t^?!i._size)
@@ -80,9 +82,9 @@ wAngle = mkRef (0 :: GLfloat)
 wAGoal = mkRef (0 :: GLfloat)
 -- |Index Angle: the wheel angle associated with the given index in the given list
 ia exprs i = 360*fromIntegral i/fromIntegral (length exprs+1) :: GLfloat
--- |Resets the wheel angle goal (called when the focus or expression is changed)
+-- |Resets the wheel angle goal (called when the selection or expression is changed)
 resetAngle = do
-  a <- ia<$>get expr<*>(fst<$>get focus)
+  a <- ia<$>get trees<*>(fst<$>get selection)
   a' <- get wAngle
   when (abs (a-a')>=180) $ wAngle $= a'+(360*signum (a-a'))
   wAGoal $= a
@@ -115,18 +117,8 @@ display = do
 
     color $ Color4 0.5 0.5 0.5 (0.4 :: GLfloat)
     Vector2 pos size <- get select
-    para pos size
+    draw (para pos size)
   swapBuffers
--- |@para p s@ draws a parallelogram of size @s@ at position @p@
-para (Vector3 x y z) (Vector3 w h d) = renderPrimitive Quads $ sequence_
-         [p1, p3, p7, p5
-         , p5, p6, p8, p7
-         , p1, p2, p4, p3
-         , p1, p2, p6, p5
-         , p3, p4, p8, p7
-         , p2, p4, p8, p6]
-  where [p1,p2,p3,p4,p5,p6,p7,p8] = liftM3 v [x,x+w] [y,y+h] [z,z+d]
--- cube w = para (pure (-w/2)) (pure w)
 -- axes = renderPrimitive Lines $ sequence_ [c 1 0 0, v 0 0 0, v 1 0 0
 --                                          ,c 0 1 0, v 0 0 0, v 0 1 0
 --                                          ,c 0 0 1, v 0 0 0, v 0 0 1]
@@ -142,10 +134,10 @@ keyboardMouse _ _ _ _ = return ()
 -- |The initial keybindings
 bindings = [
   -- Movement
-  (key (SpecialKey KeyLeft),focusLeft),
-  (key (SpecialKey KeyRight),focusRight),
-  (key (SpecialKey KeyUp),focusUp),
-  (key (SpecialKey KeyDown),focusDown),
+  (key (SpecialKey KeyLeft),selectLeft),
+  (key (SpecialKey KeyRight),selectRight),
+  (key (SpecialKey KeyUp),selectUp),
+  (key (SpecialKey KeyDown),selectDown),
   (ctl (SpecialKey KeyLeft),dragLeft),
   (ctl (SpecialKey KeyRight),dragRight),
   (ctl (SpecialKey KeyUp),dragUp),
@@ -171,9 +163,36 @@ bindings = [
   (key (Char '\ESC'),quit)
   ]
 
+-- Registers the Epsilon builtins into the ELisp environment
+registerAll = do
+  registerBuiltinW "text-box" (\ [s] -> impure (DT . atomic <$> textBox s))
+  registerBuiltinW "horiz" (\ l -> pure (glH (l :: [DrawTree DrawBox])))
+  registerBuiltinW "vert" (\ l -> pure (glV (l :: [DrawTree DrawBox])))
+  
+
+  registerBuiltinW "bind" (\ (e,Lambda _ f) -> action (bindEv e (void $ joined $ f [])))
+  registerBuiltinW "unbind" (\ [e] -> action (unbindEv e))
+
+  registerBuiltin "get-selection" (\ _ -> impure (toELVal<$>get selection))
+  registerBuiltin "swap-selection" (\ [Lambda _ f] -> action $
+                                   (unwrap f . (:[])<$>get selection) >>= joined
+                                   >>= maybe (return()) (selection $=))
+  registerBuiltin "get-selected" (\ _ -> impure (toELVal<$>get currentForest))
+  registerBuiltin "swap-selected" (\ [Lambda _ f] -> action $ do
+                                       for <-  get currentNode
+                                       for' <- joined $ unwrap f [for]
+                                       currentNode $~ maybe id const for')
+
+  registerBuiltin "add-layout" (\ [Lambda _ f] -> let h s = do
+                                                        x <- joined (f [toELVal s])
+                                                        return (fromELVal x)
+                                                  in action $ (layoutHooks <+< h
+                                                              >> resetCache))
+  
 -- |Evaluates the current node if selected
-evalNode = (get >=> getF) focus >>= \l -> case l of
-  [] -> return ()
-  (e:_) -> print =<< eval (toELVal (ELSym <$> e))
+evalNode = get currentNode >>= \n -> case n of
+  Delete -> return ()
+  Current e -> print =<< eval (toELVal (ELSym <$> e))
+  _ -> error "Impossible"
 -- |Save and exit
 quit = writeSaveFile >> leaveMainLoop

@@ -1,11 +1,11 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+{-| The Epsilon Lisp datatype -}
 module ELisp.ELVal(
   ELVal(..),ELValLike(..),
   intern,mkSym,newSym,
   ELSym(..)
   ) where
 
-import System.IO.Unsafe (unsafePerformIO)
 import Graphics (($=),get,GLfloat)
 import qualified Graphics as G
 import Trees
@@ -40,6 +40,7 @@ intern' s = get obarray >>= \(o,n) -> case M.lookup<$>s<!>pure o of
   Nothing -> obarray $= (o&maybe id (\s -> at s?~n) s,n+1) >> intern' s
 -- |Returns the unique symbol associated to the given name
 intern = unsafePerformIO . intern' . Just
+-- |The symbol associated to the given name
 mkSym s = Sym (intern s) (Just s)
 -- |Creates a new unique symbol
 newSym = intern' Nothing

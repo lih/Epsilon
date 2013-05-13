@@ -1,6 +1,8 @@
 {-# LANGUAGE Rank2Types, ScopedTypeVariables, NoMonomorphismRestriction #-}
 {- |Module describing the Epsilon Lisp environment. -}
 module ELisp(
+  -- * Modules
+  module ELisp.Joinable,
   -- * Types
   ELVal(..),ELValLike(..),
   action,
@@ -9,20 +11,17 @@ module ELisp(
   nil,
   intern,newSym,setVal,getVal,
   eval,
-  registerBuiltin,wrap,
+  registerBuiltin,registerBuiltinW,wrap,unwrap,
   -- * Parsing
   ELSym(..)
   ) where
 
 import Prelude hiding (mapM,sequence)
 import Utils hiding (focus)
-import Graphics (($=),($~),get)
+import Graphics (($~),get)
 import qualified Data.Map as M
 import ELisp.Joinable
 import ELisp.ELVal
-import Input
-import Model
-import Box
 
 values = mkRef (M.empty :: M.Map Int ELVal)
 
@@ -70,7 +69,10 @@ Initializes the environment, adding builtins and special forms:
 -}
 initELisp = do
   mapM_ (uncurry (setVal . intern)) [("match",lambdaSp),("`",backquoteSp)]
-  registerBuiltin "macro" (\ [Lambda s f] -> pure (Special s (const f)))
+  registerBuiltin "macro" (\ [Lambda s f] ->
+                            pure (Special (List [mkSym "#<macro>",s]) (const f)))
+  registerBuiltin "set" (\ [Sym s _,v] -> action (setVal s v))
+
   registerBuiltinW "+" (pure . (sum :: [Int] -> Int))
   registerBuiltinW "*" (pure . (product :: [Int] -> Int))
   registerBuiltinW "/" (pure . foldl1 (div :: Int -> Int -> Int))
@@ -80,23 +82,6 @@ initELisp = do
   registerBuiltin "print" (\[a] -> action (print (a::ELVal)))
   registerBuiltinW "map" (\ (Lambda _ f,l) -> traverse (f . return) (l::[ELVal])) 
 
-  registerBuiltinW "text-box" (\ [s] -> impure (DT <$> (atomic $ textBox s)))
-  registerBuiltinW "horiz" (\ l -> pure (glH (l :: [DrawTree DrawBox])))
-  registerBuiltinW "vert" (\ l -> pure (glV (l :: [DrawTree DrawBox])))
-    
-  registerBuiltinW "bind" (\ (e,Lambda _ f) -> action (bindEv e (void $ joined $ f [])))
-  registerBuiltinW "unbind" (\ [e] -> action (unbindEv e))
-
-  registerBuiltin "set" (\ [Sym s _,v] -> action (setVal s v))
-  registerBuiltin "get-focus" (\ _ -> impure (toELVal<$>get focus))
-  registerBuiltin "swap-focus" (\ [Lambda _ f] -> action $ do
-                                   foc <- joined =<< (unwrap f . (:[])<$>get focus)
-                                   maybe (return()) (\e -> focus $= e) foc)
-  registerBuiltin "get-selection" (\ _ -> impure (toELVal<$>(get focus>>=getF)))
-  registerBuiltin "swap-selection" (\ [Lambda _ f] -> action $ do
-                                       for <-  getF =<< get focus
-                                       for' <- joined $ unwrap f [for]
-                                       id ~~ maybe id const for')
         
 -- |Evaluates the given expression
 eval = joined . eval' M.empty
@@ -118,17 +103,19 @@ lambdaSp = Special (mkSym "#<spe:lambda>") lambda
                     Just l -> eval' (M.union l locals) expr
                     Nothing -> k v
           Nothing -> error $ "Invalid syntax for lambda special form: "++show args
+match (Sym n _) (Sym n' _) | n==n' = return M.empty
+match (Sym n _) _ | n==intern "_" = return M.empty
 match (List [Sym s _,Sym n _]) x | s==intern "?" = return (M.singleton n x)
 match (List a) (List b) | length (zip a b)>=length a-1 = 
-  M.unions <$> sequence (zipWith match' (tails a) (tails b))
+  M.unions <$> sequence (zipWith match' (init $ tails a) (tails b))
   where match' [List [Sym s _,Sym n _]] l | s==intern "|" =
           return (M.singleton n (List l))
+        match' [_] (_:_:_) = mzero
         match' (p:_) (x:_) = match p x
-        match' [] [] = return M.empty
         match' _ _ = mzero
-match (Sym n _) (Sym n' _) | n==n' = return M.empty
-match (Int n) (Int n') | n==n' = return M.empty
 match (Char c) (Char c') | c==c' = return M.empty
+match (Int n) (Int n') | n==n' = return M.empty
+match (GLfloat a) (GLfloat b) | a==b = return M.empty 
 match _ _ = mzero
 
 backquoteSp = Special (mkSym "#<spe:backquote>") bq
@@ -140,5 +127,5 @@ backquoteSp = Special (mkSym "#<spe:backquote>") bq
         bq _ _ = pure nil 
 
 registerBuiltinW b f = registerBuiltin b (wrap f)
-registerBuiltin b f = setVal (intern name) (Lambda (mkSym name) f)
+registerBuiltin b f = setVal (intern b) (Lambda (mkSym name) f)
   where name = "#<builtin:"++b++">"

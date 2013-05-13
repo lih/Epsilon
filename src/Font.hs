@@ -1,5 +1,6 @@
 {-# LANGUAGE ImplicitParams, Rank2Types, NoMonomorphismRestriction #-}
-module Font where
+{-| A module for fonts -}
+module Font(withFont,fontSize) where
 
 import Graphics
 import Foreign.C.Types
