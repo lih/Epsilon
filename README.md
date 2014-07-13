@@ -49,7 +49,9 @@ The install went okay ? Good !
 Now just enter `Epsilon` into a shell to start your first session. 
 You should promptly be faced with a view similar to this :
 
-![Test](demo/test.gif)
+<video controls="controls">
+  <source src="demo/epsilon.webm" type="video/webm" />
+</video>
 
 You may now start editing ! The following commands are available :
 
