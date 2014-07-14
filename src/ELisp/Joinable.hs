@@ -1,5 +1,5 @@
 -- |A type describing potentially pure or impure values (to preserve laziness when possible)
-module ELisp.Joinable(Joinable,joined,impure) where
+module ELisp.Joinable(Joinable,joined,impure,getPure) where
 
 import Utils
 
@@ -21,3 +21,6 @@ instance Monad Joinable where
 joined (Joinable j) = either return id j
 -- |Create a Joinable from an IO value
 impure = Joinable . Right
+-- |Retrieves a pure value if it exists
+getPure (Joinable (Left a)) = Just a
+getPure _ = Nothing

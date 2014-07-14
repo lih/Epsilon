@@ -38,5 +38,6 @@ class Scalable d where
 -- |A tree of drawable elements
 data DrawTree a = DrawTree { _droot :: a, _dsubs :: [(Int,Tree a)] }
 $( makeLenses ''DrawTree )
+type DTB = DrawTree DrawBox
 -- |Transforms a DrawTree into a Tree
 toTree (DrawTree r s) = Node r (map snd s)

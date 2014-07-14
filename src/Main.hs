@@ -27,6 +27,7 @@ import ELisp hiding (Char)
 import Model
 import Hooks
 import Data.Char
+import Foreign.C.Types (CFloat(..))
 
 -- |The main function
 main :: IO ()
@@ -52,9 +53,22 @@ main = do
     keyboardHooks <+< keyboardMouse
     varHooks currentNode <+< (resetAngle >> resetCache)
     varHooks selection <+< (resetAngle >> resetSelection)
-    initSave file >>= \es -> forM_ es $ \e -> currentNode $= Insert e
+    initSave file >>= \es -> forM_ (reverse es) $ \e -> currentNode $= Insert e
     mainLoop
-
+-- |Initializes the transition timers for the camera parameters
+initCamera = do
+  smoothTr inter scl sclGoal
+  smoothTr inter yaw yawGoal
+  smoothTr inter pitch pitchGoal
+  smoothTr (liftA2 . inter) center centerGoal
+  mouseHooks <+< mouse
+  dragHooks <+< drag
+  where mouse WheelUp _ _ = zoomIn ; mouse WheelDown _ _ = zoomOut
+        mouse _ _ _ = return ()
+        drag (Vector2 dx dy) = cameraLeft (fromIntegral dx/3)
+                               >> cameraUp (fromIntegral dy/3)
+-- |Registers the smooth transition between 'select' and 'selectGoal'
+initSelection = smoothTr (liftA2 . liftA2 . inter) select selectGoal
 
 -- |The drawtree cache (updated only when the expression changes)
 cache = mkRef ([] :: [DrawTree DrawBox])
@@ -93,15 +107,15 @@ resetAngle = do
 display = do 
   clear [ ColorBuffer, DepthBuffer ]
   loadIdentity
-  scalev . pure =<< get scl
-  scalev $ pure (0.001 :: GLfloat)
   -- axes
   preservingMatrix $ do
     exprs <- get cache
     wa <- get wAngle
 
-    rotate <$> get angleY <!> pure (Vector3 (-1) 0 0)
-    rotate <$> get angleX <!> pure (Vector3 0 1 0)
+    scalev . pure =<< get scl
+    scalev $ pure (0.001 :: GLfloat)
+    rotate <$> get pitch <!> pure (Vector3 (-1) 0 0)
+    rotate <$> get yaw <!> pure (Vector3 0 1 0)
     translate . fmap negate =<< get center
     preservingMatrix $ do
       translate $ v3 0 0 (10000::GLfloat)
@@ -118,11 +132,25 @@ display = do
     color $ Color4 0.5 0.5 0.5 (0.4 :: GLfloat)
     Vector2 pos size <- get select
     draw (para pos size)
+
+  depthMask $= Disabled
+  (Position x y,Size s _) <- get viewport
+  ortho2D (fromIntegral x) (fromIntegral (x+s)) (fromIntegral y) (fromIntegral (s+y))
+  text <- get selection<&> \(h,_) -> ("<wheel>#"++show h)
+  [_,y,_,_,y',_] <- getFontBBox ?statusFont text<&>map CFloat
+  c 0 0 0
+  renderPrimitive Quads $ do
+    let v2 x y = vertex $ Vertex2 x (y::GLfloat)
+    v2 0 y; v2 0 y'; v2 (fromIntegral s) y'; v2 (fromIntegral s) y    
+
+  renderFont ?statusFont text All
+  depthMask $= Enabled
+  
   swapBuffers
 -- axes = renderPrimitive Lines $ sequence_ [c 1 0 0, v 0 0 0, v 1 0 0
 --                                          ,c 0 1 0, v 0 0 0, v 0 1 0
 --                                          ,c 0 0 1, v 0 0 0, v 0 0 1]
--- The reshape callback that ensures that text is not deformed when the window is resized.
+-- |The reshape callback that ensures that text is not deformed when the window is resized.
 reshape (Size w h) = do
   let m = max w h
   viewport $= (Position ((w-m)`div`2) ((h-m)`div`2),Size m m)
@@ -165,12 +193,17 @@ bindings = [
 
 -- Registers the Epsilon builtins into the ELisp environment
 registerAll = do
-  registerBuiltinW "text-box" (\ [s] -> impure (DT . atomic <$> textBox s))
-  registerBuiltinW "horiz" (\ l -> pure (glH (l :: [DrawTree DrawBox])))
-  registerBuiltinW "vert" (\ l -> pure (glV (l :: [DrawTree DrawBox])))
-  
+  registerBuiltinW "text#" (\ [s] -> impure (DT . atomic <$> textBox s))
+  registerBuiltinW "horiz#" (\ l -> pure (glH (l :: [DTB])))
+  registerBuiltinW "vert#" (\ l -> pure (glV (l :: [DTB])))
+  registerBuiltinW "al-left#" (\ [b] -> pure (align L (b::DTB)))
+  registerBuiltinW "color#" (\ ((r,g,b),t) -> pure (colored (Color3 (r::GLfloat) g b) (t::DTB)))
+  registerBuiltinW "pad#" (\ (x,y,z) -> pure (padding (v3 x y z) :: DrawTree DrawBox))
+  registerBuiltinW "subs#" (\[l] -> impure (mkSubs (map pure l)))
+  registerBuiltinW "match#" (\ (p,e) -> impure (matchBox p e))
+  registerBuiltinW "syntax#" (\ [s] -> impure (syntaxBox s))
 
-  registerBuiltinW "bind" (\ (e,Lambda _ f) -> action (bindEv e (void $ joined $ f [])))
+  registerBuiltinW "bind" (\ (e,Lambda x f) -> action (print x >> print e >> bindEv e (void $ joined $ f [])))
   registerBuiltinW "unbind" (\ [e] -> action (unbindEv e))
 
   registerBuiltin "get-selection" (\ _ -> impure (toELVal<$>get selection))

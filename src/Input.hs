@@ -55,7 +55,7 @@ dragMotH (Position x y) = do
 
 -- |A keyboard event
 data Event = KB (KeyState,KeyState,KeyState) Key
-           deriving (Eq,Ord)
+           deriving (Eq,Ord,Show)
 mkEv (Modifiers s c a) k = KB (s,c,a) k
 evMap = mkRef (M.empty :: M.Map Event (IO ()))
 

@@ -6,11 +6,15 @@ module Box(
   -- * Layout
   atomic,
   moved,movedTo,centered,padded,scaled',colored,
+  align,Alignment(..),
   glH,glV,
   (#-),(#-#),(#|),(#|#),
 
   -- * Contruction
-  para,cube,textBox,syntaxBox,
+  para,cube,padding,
+  textBox,
+  mkSubs,matchBox,
+  syntaxBox,
 
   -- * Other
   layoutHooks,draw
@@ -143,6 +147,7 @@ textBox text = do
     >> renderFont ?font text All
 
 cursor = padding (pure 0)
+mkSubs :: [IO (DrawTree DrawBox)] -> IO ([DrawTree DrawBox],DrawTree DrawBox)
 mkSubs ms = do
    s <- sequence ms
    let s' = [DrawTree a [(i,Node (movedTo a (pure 0)) (map snd s'))]
@@ -166,22 +171,22 @@ syntaxBox' (Symbol a) = atomic . col . glH
 
 syntaxBox' (Group g@[Symbol op,_]) | op`elem`["?","!","|","`","@"] = 
   withSubs (syntaxes g) $ \[op,a] cur -> op#-#a#- cur
-syntaxBox' (Group g@(Symbol op:_:_:_)) | op`elem`["+","*","-","%","/",">>=",",","<=",">=","<",">",".","<>","=","<-"] = do
+syntaxBox' (Group g@(Symbol op:_:_:_)) | op`elem`["+","*","-","%","/",">>=",",","<=",">=","<",">",".","<>","=","<-","->"] = do
   o <- head subs
   withSubs subs $ \(op:arg:args) cur -> glH [arg,big op,(args%-%big o),cur]
   where toUnicode x = fromMaybe x $ lookup x [("<-","\x2190"),("<>","\x2260")
                                              ,(">=","\x2265"),("<=","\x2264")]
         subs = syntaxes (g&_head._Symbol%~toUnicode)
         big a = hPad 30#-a#-hPad 30
-syntaxBox' (Group g@(Symbol "vert":_:_:_)) = do
+syntaxBox' (Group g@(Symbol "vert#":_:_:_)) = do
   ss <- sequence (syntaxes (tail g)) 
   let o = atomic (para (pure 0) (big^._size&vy.~5)&_center.~(big^._center))
       big = glV ss
   ((op:arg:args),cur) <- mkSubs $ map pure (o:ss)
   return $ glV [arg,op,(args%|%o),cur]
-syntaxBox' (Group g@(Symbol "horiz":_:_:_)) = do
+syntaxBox' (Group g@(Symbol "horiz#":_:_:_)) = do
   ss <- sequence (syntaxes (tail g)) 
-  let o = atomic (para (pure 0) (big^._size&vx.~5)&_center.~(big^._center))
+  let o = atomic $ padded (pure 30) $ para (pure 0) (big^._size&vx.~5)&_center.~(big^._center)
       big = glH ss
   ((op:arg:args),cur) <- mkSubs $ map pure (o:ss)
   return $ glH [arg,op,(args%-%o),cur]
@@ -194,14 +199,10 @@ syntaxBox' (Group (Symbol "lambda":Group vs:body)) = do
   dot <- atomic <$> textBox "."
   withSubs subs $ \(l:vars:subs) cur ->
     glH [([colored grey l,vars,dot]++subs) %-% hPad 10,cur]
-  where subs = (atomic<$>textBox "\x03bb"):withSubs (syntaxes vs) vars:syntaxes body
-        vars vs cur = glH [vs %-% hPad 30,cur]
+  where subs = (atomic<$>textBox "\x03bb"):withSubs (syntaxes vs) lamVars:syntaxes body
 syntaxBox' (Group (Symbol "match":subs)) | all (has (_Group.to length.only 2)) subs = do
   lam <- colored grey . atomic <$> textBox "\x03bb"
-  arr <- padded (v3 30 0 0) . atomic <$> textBox "\x2192"
-  let matchBox (Group s) = withSubs (syntaxes s) $ \[p,e] cur -> p#-#arr#-#e#-cur
-      matchBox _ = error "Impossible situation"
-  withSubs (pure lam:map matchBox subs) $ \(l:bs) cur ->
+  withSubs (pure lam:map (\(Group [p,e]) -> matchBox p e) subs) $ \(l:bs) cur ->
     l#-#((map (align L) bs%|%vPad 10)
          #|# cur)
 syntaxBox' (Group g@(Symbol "do":_)) = withSubs (syntaxes g) $ \(h:t) cur ->
@@ -230,6 +231,13 @@ syntaxBox' (Group g) = do
   [open,close] <- mapM (fmap atomic . textBox) ["[","]"]
   withSubs (syntaxes g) $ \subs cur ->
     glH $ [open]++intersperse (hPad 30) subs++[cur,close]
+
+lamVars vs cur = glH [vs %-% hPad 30,cur]
+matchBox p e = do
+  arr <- padded (v3 30 0 0) . atomic<$>textBox "\x2192" 
+  withSubs [patSyn p,syntaxBox e] $ \[p,e] cur -> p#-#arr#-#e#-cur
+  where patSyn e@(Symbol _) = syntaxBox e
+        patSyn (Group ps) = withSubs (syntaxes ps) lamVars
 
 -- |The layout hooks
 layoutHooks = mkHooks ([] :: [Syntax String -> IO (Maybe (DrawTree DrawBox))])
