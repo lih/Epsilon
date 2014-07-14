@@ -49,10 +49,12 @@ The install went okay ? Good !
 Now just enter `Epsilon` into a shell to start your first session. 
 You should promptly be faced with a view similar to this :
 
-<video controls="controls">
-  <source src="https://github.com/lih/Epsilon/raw/master/demo/epsilon.webm" type="video/webm" />
-  The Epsilon video not viewable in your browser. Sorry.
-</video>
+<div id="epsilon-demo">
+  <video controls="controls">
+    <source src="https://s3-eu-west-1.amazonaws.com/coiffier/data/epsilon.webm" type="video/webm" />
+    The Epsilon video is not viewable in your browser. Sorry.
+  </video>
+</div>
 
 You may now start editing ! The following commands are available :
 
